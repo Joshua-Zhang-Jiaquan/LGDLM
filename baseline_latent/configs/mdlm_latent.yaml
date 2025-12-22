@@ -1,0 +1,55 @@
+# File: configs/hdlm_latent.yaml
+defaults:
+  - logging: default
+  - data: owt
+  - model: small
+  - optimizer: adam
+  - _self_
+
+# Data configuration
+data:
+  dataset_name: "json"  # Use json dataset
+  data_files:
+    train: "${data.latent_data_root}/train_data.json"
+    validation: "${data.latent_data_root}/validation_data.json"
+  latent_data_root: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/HDLM/mmdit/data_root"
+  streaming: false
+  pre_tokenize: true
+  max_length: 512
+  sequence_packing: false  # Disable for latent conditioning
+  
+# Model with latent asdf
+model:
+  type: diffusion
+  diffusion_process: mdlm
+  use_latent_conditioning: true  # Enable latent conditioning
+  conditioning_type: "adaln"  # <-- ADD THIS LINE
+  latent_dim: 768  # Your T5 dimension
+  cluster_size: 0  # Your cluster size if using clustering
+  
+  # Original DIT parameters
+  hidden_size: 768
+  n_blocks: 12
+  n_heads: 12
+  cond_dim: 768
+  max_seq_len: 512
+  dropout: 0.1
+  t_eps: 1e-4
+
+# Training (adjust as needed)
+training:
+  resume: null
+  seed: 1
+  train_batch_size: 32  # Might need to reduce for memory
+  eval_batch_size: 32
+  num_train_steps: 1000000
+  lr_schedule: cosine
+  warmup_steps: 5000
+  low_discrepancy_sampling: true
+  dtype: bf16
+  compile_model: true
+
+loss:
+  loss_type: mdlm
+  loss_scale: 1.0
+  reduction: tokenmean

@@ -1,0 +1,83 @@
+# File: configs/mmdit_1024d.yaml
+defaults:
+  - logging: default
+  - optimizer: adam
+  - _self_
+
+data:
+  dataset_name: "json"
+  latent_data_root: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/HDLM/mmdit/data_root_1024d"
+  data_files:
+    train: "${data.latent_data_root}/train_data.json"
+    validation: "${data.latent_data_root}/train_data.json"
+  num_workers: 4
+  max_length: 512
+  tokenizer_name: "bert-base-uncased"
+
+model:
+  # Model type
+  type: "multimodal_mmdit"
+  diffusion_process: "mdlm"  # Text uses masked diffusion
+  latent_diffusion_process: "continuous"  # Latents use continuous diffusion
+  
+  # Architecture parameters
+  hidden_size: 1024
+  n_blocks: 12
+  n_heads: 12
+  cond_dim: 1024
+  max_seq_len: 1024
+  dropout: 0.1
+  
+  # MMDiT specific parameters
+  num_residual_streams: 2
+  qk_rmsnorm: true
+  
+  # Multimodal specific
+  use_multimodal: true
+  latent_dim: 1024
+  latent_beta_min: 0.0001
+  latent_beta_max: 0.02
+  cluster_size: 0
+  
+  # Text diffusion
+  p_uniform: 0.0
+  t_eps: 1e-4
+
+training:
+  seed: 42
+  train_batch_size: 16
+  eval_batch_size: 16
+  num_train_steps: 250000
+  dtype: fp32
+  compile_model: false
+  lr_schedule: cosine
+  warmup_steps: 5000
+  resume: null
+  world_size: 1  # Will be set automatically
+
+loss:
+  loss_type: multimodal_mdlm
+  loss_scale: 1.0
+  reduction: tokenmean
+  latent_loss_weight: 1.0
+  text_loss_weight: 1.0
+
+logging:
+  run_name: "t5_1024d_full"
+  wandb_project: "mmdit"
+  wandb_entity: null
+  wandb_dir: "./outputs/"
+  log_freq: 100
+  eval_freq: 1000
+  save_freq: 5000
+  num_eval_batches: 50
+  save_dir: "./outputs"
+
+optimizer:
+  name: "adamw"
+  lr: 1e-4
+  weight_decay: 0.01
+  beta1: 0.9
+  beta2: 0.95
+  eps: 1e-8
+  grad_clip_norm: 1.0

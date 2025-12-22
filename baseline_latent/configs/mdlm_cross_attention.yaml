@@ -1,0 +1,46 @@
+# File: configs/hdlm_cross_attention.yaml
+defaults:
+  - hdlm_latent  # Inherit from base latent config FIRST
+  - _self_
+
+# Data configuration - OVERRIDE base settings
+data:
+  dataset_name: "json"
+  data_files:
+    train: "data_root/train_data.json"
+    validation: "data_root/validation_data.json"
+  latent_data_root: "./data_root"
+  streaming: false
+  pre_tokenize: true
+  max_length: 512
+  sequence_packing: false
+  
+# Model configuration - ADD cross-attention parameters
+model:
+  type: diffusion
+  diffusion_process: mdlm
+  use_latent_conditioning: true
+  latent_dim: 768
+  cluster_size: 0
+  
+  # Original DIT parameters (ensure they exist in base)
+  hidden_size: 768
+  n_blocks: 12
+  n_heads: 12
+  cond_dim: 768
+  max_seq_len: 512
+  dropout: 0.1
+  t_eps: 1e-4
+  
+  # NEW cross-attention parameters
+  conditioning_type: "cross_attention"
+  cross_attention_frequency: 2
+  predict_latents: true
+  latent_prediction_weight: 0.1
+
+# Training - OVERRIDE base settings
+training:
+  train_batch_size: 32  # Start with 32, can override via command line
+  eval_batch_size: 32
+  num_train_steps: 1000000
+  compile_model: false  # Disable for cross-attention (can be buggy)

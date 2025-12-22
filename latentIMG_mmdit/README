@@ -1,0 +1,63 @@
+# latentIMG_mmdit — training README
+
+This folder contains two example training scripts for MMDiT image+text modeling using diffusion objectives:
+
+- `train_image_discrete.py` — masked/discrete diffusion objective for text tokens.
+- `train_image_continuous.py` — continuous diffusion objective that predicts noise on continuous embeddings/tokens.
+
+Below is a concise explanation of the differences, the default encoders used by each script, and which external text/latent encoders are available in the repository (so you can prepare latents or swap encoders).
+
+## High-level differences
+
+  - Objective: masked-token diffusion. The model learns to predict discrete token IDs (or masked tokens) rather than continuous noise vectors.
+  - Text data: works on token IDs / attention masks. Short captions are tokenized and discrete masking/noising is applied (mask token replacement) according to a discrete schedule.
+  - Text encoder: the code contains a learnable `TextTokenEncoder` (token embeddings + positional embeddings) and also a `BertTextEncoder` if you prefer to use a frozen transformer encoder. By default this script is arranged to work with token-level objectives, so you commonly use the learnable token encoder or a tokenizer+frozen BERT depending on config.
+  - Use-case: training when your objective is to predict tokens (masked LM style) and you want the model to directly learn discrete text reconstruction.
+
+## Example commands — how to run the training scripts
+
+Below are simple example commands to run each script on a single GPU. Adjust paths, batch sizes, and other flags to match your environment.
+
+- Run the masked/discrete training (single GPU):
+
+```bash
+python3 train_image_discrete.py \
+  --data-root /path/to/prepared_coco_like_data \
+  --epochs 50 \
+  --batch-size 8 \
+  --max-samples 10000 \
+  --device cuda \
+  --dim-text 768 \
+  --dim-image 512 \
+  --output-dir outputs_masked
+```
+
+- Run the continuous diffusion training (single GPU):
+
+```bash
+python3 train_image_continuous.py \
+  --data-root /path/to/prepared_coco_like_data \
+  --epochs 50 \
+  --batch-size 8 \
+  --max-samples 10000 \
+  --device cuda \
+  --dim-text 1024 \
+  --dim-image 512 \
+  --output-dir outputs_continuous
+```
+
+Notes:
+- These scripts are written for single-process training by default. If you need to run on multiple GPUs you should either wrap them with a launch utility and add DDP support, or adapt the training loop to use `torch.distributed` (the repo's `prepare_data_multi_gpu.py` is already distributed-ready for preprocessing).
+- Make sure `--dim-text` matches the embedding size of the encoder you use for continuous training (e.g., 1024 for multilingual E5 large / Qwen embedding models in the examples).
+- For quick testing, set `--max-samples` small (e.g., 10) to validate the data pipeline and model initialization before doing a long run.
+
+- train_image_continuous.py (continuous / proper diffusion):
+  - Objective: proper diffusion that predicts continuous noise added to modality embeddings (image and text embeddings). The model predicts continuous noise vectors and is trained with an MSE noise prediction loss.
+  - Text data: text captions are encoded into continuous embeddings (the script includes a frozen `BertTextEncoder` that tokenizes and returns embedding tensors). The diffusion process operates on those continuous embeddings.
+  - Text encoder: the continuous script uses a frozen BERT encoder (`BertTextEncoder`) by default to convert captions into continuous embedding tensors before diffusion.
+  - Use-case: training when the diffusion model is operating in continuous embedding space (often easier when you have high-quality continuous text embeddings or when aligning images and continuous text latents).
+
+## Shared components
+
+- `ImagePatchEncoder` — both scripts include a patch-based image encoder (learnable Conv2d projection + positional embeddings) to convert images into patch tokens.
+- `MMDiT` model — both scripts construct an MMDiT instance for multimodal diffusion; the objective and input pipeline differ per script.

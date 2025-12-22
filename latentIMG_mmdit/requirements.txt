@@ -1,0 +1,24 @@
+# Core
+torch==2.6.0
+torchvision
+torchaudio
+numpy>=1.23.5,<2.0.0  # SciPy compatibility
+
+# Data Processing
+datasets>=2.14.0
+transformers>=4.35.0
+sentence-transformers>=2.2.0
+tqdm>=4.65.0
+accelerate>=0.24.0
+
+# For T5 model
+protobuf>=3.20.0,<4.0.0
+
+
+# For E5 model
+sentencepiece>=0.1.99
+
+# Utilities
+pandas>=2.0.0
+scipy>=1.10.0,<1.12.0  # NumPy compatibility
+huggingface-hub>=0.20.0
