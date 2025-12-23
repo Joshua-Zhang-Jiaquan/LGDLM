@@ -12,6 +12,8 @@ This repo now contains (high-level):
 
 Note: This top-level README intentionally focuses on the latent/text/image workflows. If you need to run the original HDLM unconditional generation or NeurIPS experiment reproductions, see the `baseline/` and `baseline_latent/` folders — those baselines are retained.
 
+
+
 ---
 
 ## Pip install
