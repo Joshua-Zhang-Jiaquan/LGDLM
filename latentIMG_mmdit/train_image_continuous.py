@@ -33,17 +33,17 @@ from mmdit.mmdit_generalized_pytorch import MMDiT
 """MMDiT training with proper diffusion objective (not just reconstruction)."""
 
 import os
-# Set HuggingFace cache directory BEFORE importing transformers
-os.environ['HF_HOME'] = '/home/yl892/rds/hpc-work/mmdit/huggingface_cache'
-os.environ['TRANSFORMERS_CACHE'] = '/home/yl892/rds/hpc-work/mmdit/huggingface_cache'
-os.environ['HF_DATASETS_CACHE'] = '/home/yl892/rds/hpc-work/mmdit/huggingface_cache/datasets'
+# # Set HuggingFace cache directory BEFORE importing transformers
+# os.environ['HF_HOME'] = '/home/yl892/rds/hpc-work/mmdit/huggingface_cache'
+# os.environ['TRANSFORMERS_CACHE'] = '/home/yl892/rds/hpc-work/mmdit/huggingface_cache'
+# os.environ['HF_DATASETS_CACHE'] = '/home/yl892/rds/hpc-work/mmdit/huggingface_cache/datasets'
 
-# Make sure the directory exists
-os.makedirs('/home/yl892/rds/hpc-work/mmdit/huggingface_cache', exist_ok=True)
-os.makedirs('/home/yl892/rds/hpc-work/mmdit/huggingface_cache/datasets', exist_ok=True)
+# # Make sure the directory exists
+# os.makedirs('/home/yl892/rds/hpc-work/mmdit/huggingface_cache', exist_ok=True)
+# os.makedirs('/home/yl892/rds/hpc-work/mmdit/huggingface_cache/datasets', exist_ok=True)
 
 # Now import everything else
-from __future__ import annotations
+# from __future__ import annotations
 import argparse
 # ... rest of your imports ...
 

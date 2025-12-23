@@ -5,6 +5,12 @@ defaults:
   - optimizer: adam
   - _self_
 
+data:
+  dataset_name: "json"
+  data_files:
+    train: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/HDLM/openwebtext_processed/openwebtext.jsonl"
+  streaming: false
+  
 model:
   type: diffusion
   diffusion_process: mdlm

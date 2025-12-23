@@ -1,15 +1,15 @@
 # File: configs/hdlm_cross_attention.yaml
 defaults:
-  - hdlm_latent  # Inherit from base latent config FIRST
+  - mdlm_latent  # Inherit from base latent config FIRST
   - _self_
 
 # Data configuration - OVERRIDE base settings
 data:
   dataset_name: "json"
   data_files:
-    train: "data_root/train_data.json"
-    validation: "data_root/validation_data.json"
-  latent_data_root: "./data_root"
+    train: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/HDLM/mmdit/data_root/train_data.json"
+    validation: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/HDLM/mmdit/data_root/train_data.json"
+  latent_data_root: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/HDLM/mmdit/data_root"
   streaming: false
   pre_tokenize: true
   max_length: 512

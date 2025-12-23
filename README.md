@@ -34,28 +34,28 @@ Example preprocessing (from `preprocessed_data/README`):
 
 ```bash
 # SONAR on 2 GPUs
-torchrun --nnodes=1 --nproc_per_node=2 preprocessed_data/prepare_data_multi_gpu.py \
+torchrun --nnodes=1 --nproc_per_node=1 preprocessed_data/prepare_data_multi_gpu.py \
   --datasets openwebtext \
   --latent-model sonar \
   --batch-size 128 \
   --max-samples 10000000 \
-  --output-dir sonar_1024d_full
+  --output-dir preprocessed_data/sonar_1024d_full
 
 # E5 (multilingual-e5-large) on 4 GPUs
-torchrun --nnodes=1 --nproc_per_node=4 preprocessed_data/prepare_data_multi_gpu.py \
+torchrun --nnodes=1 --nproc_per_node=1 preprocessed_data/prepare_data_multi_gpu.py \
   --datasets openwebtext \
   --latent-model e5 \
   --batch-size 256 \
   --max-samples 10000000 \
-  --output-dir e5_1024d_full
+  --output-dir preprocessed_data/e5_1024d_full
 
 # Qwen embedding model on 2 GPUs (lower memory than large causal models)
-torchrun --nnodes=1 --nproc_per_node=2 preprocessed_data/prepare_data_multi_gpu.py \
+torchrun --nnodes=1 --nproc_per_node=1 preprocessed_data/prepare_data_multi_gpu.py \
   --datasets openwebtext \
   --latent-model qwen \
   --batch-size 8 \
   --max-samples 10000000 \
-  --output-dir qwen_1024d_full
+  --output-dir preprocessed_data/qwen_1024d_full
 ```
 
 Files created by `prepare_data_multi_gpu.py` (typical):
@@ -86,45 +86,42 @@ Below are example single-node, single-process `torchrun` commands for common bas
 
 ```bash
 # MDLM baseline (quick test)
-torchrun --nnodes 1 --nproc_per_node 1 hdlm/train.py \
+torchrun --nnodes 1 --nproc_per_node 1 baseline/train.py \
   --config-name mdlm \
   logging.run_name="'test-openwebtext'" \
   data.dataset_name="openwebtext" \
   data.dataset_subset=null \
   data.data_files.train=null \
   data.cache_dir="./data" \
-  data.test_size=1000 \
   training.train_batch_size=4 \
   training.eval_batch_size=4 \
-  training.num_train_steps=20 \
   logging.eval_freq=10 \
-  logging.log_freq=5
+  logging.log_freq=5 \
+  training.compile_model=False
 ```
 
 ```bash
 # Latent DIT baseline (full latent training)
-torchrun --nnodes 1 --nproc_per_node 1 hdlm/train_latent_dit.py \
-  --config-name hdlm_latent \
+torchrun --nnodes 1 --nproc_per_node 1 baseline_latent/train_latent_dit.py \
+  --config-name mdlm_latent \
   logging.run_name="latent-full-8M" \
   data.dataset_name="openwebtext" \
-  data.latent_data_root="./data_root" \
+  data.latent_data_root="/inspire/hdd/global_user/zhangjiaquan-253108540222//latent/HDLM/mmdit/data_root" \
   model.latent_dim=768 \
   model.use_latent_conditioning=true \
   training.train_batch_size=32 \
   training.eval_batch_size=32 \
   training.num_train_steps=250000 \
-  training.compile_model=false
+  training.compile_model=false 
 ```
 
 ```bash
 # Cross-attention latent baseline
-torchrun --nnodes 1 --nproc_per_node 1 hdlm/train_cross_dit.py \
-  --config-name hdlm_cross_attention \
+torchrun --nnodes 1 --nproc_per_node 1 baseline_latent/train_cross_dit.py \
+  --config-name mdlm_cross_attention \
   logging.run_name="cross-attention-training" \
-  data.dataset_name="json" \
+  data.dataset_name="openwebtext" \
   data.latent_data_root="/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/HDLM/mmdit/data_root" \
-  data.data_files.train="/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/HDLM/mmdit/data_root/train_data.json" \
-  data.data_files.validation="/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/HDLM/mmdit/data_root/train_data.json" \
   training.train_batch_size=16 \
   training.eval_batch_size=16 \
   training.num_train_steps=250000 \
@@ -139,7 +136,7 @@ torchrun --nnodes 1 --nproc_per_node 1 hdlm/train_cross_dit.py \
 
 ```bash
 # MMDiT training run (use bf16 for faster/memory-efficient runs on supported hardware)
-torchrun --nnodes 1 --nproc_per_node 1 hdlm/train_mmdit.py \
+torchrun --nnodes 1 --nproc_per_node 1 latentDLM_mmdit/train_mmdit.py \
   --config-name mmdit \
   logging.run_name="mmdit-training-h200" \
   training.train_batch_size=80 \
@@ -147,7 +144,7 @@ torchrun --nnodes 1 --nproc_per_node 1 hdlm/train_mmdit.py \
   training.num_train_steps=25000 \
   training.compile_model=false \
   model.latent_dim=768 \
-  training.dtype=bf16
+  training.dtype=fp32
 ```
 
 
@@ -155,7 +152,7 @@ torchrun --nnodes 1 --nproc_per_node 1 hdlm/train_mmdit.py \
 # MMDIT  (text ↔ Image)
 ```bash
 python latentIMG_mmdit/train_image_continuous.py \
-  --data-root /path/to/preprocessed_data/e5_1024d_full \
+  --data-root /inspire/hdd/global_user/zhangjiaquan-253108540222/latent/LatentMAS/data/coco2014/images \
   --epochs 50 \
   --batch-size 8 \
   --dim-text 1024 \
@@ -165,7 +162,7 @@ python latentIMG_mmdit/train_image_continuous.py \
 
 ```bash
 python latentIMG_mmdit/train_image_discrete.py \
-  --data-root /path/to/tokenized_coco_like_data \
+  --data-root /inspire/hdd/global_user/zhangjiaquan-253108540222/latent/LatentMAS/data/coco2014/images \
   --epochs 50 \
   --batch-size 8 \
   --dim-text 768 \
