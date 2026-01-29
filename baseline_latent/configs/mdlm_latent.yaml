@@ -12,7 +12,7 @@ data:
   data_files:
     train: "${data.latent_data_root}/train_data.json"
     validation: "${data.latent_data_root}/validation_data.json"
-  latent_data_root: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/HDLM/mmdit/data_root"
+  latent_data_root: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/MM-LDLM/preprocessed_data/data_root"
   streaming: false
   pre_tokenize: true
   max_length: 512

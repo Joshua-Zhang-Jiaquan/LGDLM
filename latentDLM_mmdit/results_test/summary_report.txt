@@ -1,0 +1,31 @@
+================================================================================
+MMDiT MODEL EVALUATION REPORT
+================================================================================
+
+SEMANTIC TEXTUAL SIMILARITY (STS) EVALUATION
+------------------------------------------------------------
+Dataset: stsb
+Samples: 20
+
+Correlation Metrics:
+  Spearman Correlation: 0.2648
+  Pearson Correlation:  0.2737
+
+Error Metrics:
+  Mean Absolute Error (MAE): 2.7198
+  Root Mean Squared Error (RMSE): 2.9980
+
+================================================================================
+INTERPRETATION GUIDE:
+================================================================================
+Spearman Correlation:
+  > 0.7: Excellent semantic understanding
+  0.5-0.7: Good semantic understanding
+  0.3-0.5: Moderate semantic understanding
+  < 0.3: Poor semantic understanding
+
+Encoding Consistency:
+  > 0.9: Highly stable encodings
+  0.7-0.9: Stable encodings
+  < 0.7: Unstable encodings
+================================================================================

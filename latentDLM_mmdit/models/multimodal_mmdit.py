@@ -37,17 +37,25 @@ class TimestepEmbedder(nn.Module):
     def timestep_embedding(t, dim, max_period=10000):
         """Create sinusoidal timestep embeddings."""
         half = dim // 2
+        
+        # Use float32 for calculations, then convert to target dtype
+        device = t.device
         freqs = torch.exp(
-            - math.log(max_period)
-            * torch.arange(start=0, end=half, dtype=torch.float32, device=t.device)
-            / half)
+            -math.log(max_period) 
+            * torch.arange(start=0, end=half, dtype=torch.float32, device=device) 
+            / half
+        )
+        
+        # Use t in float32 for calculation
         args = t[:, None].float() * freqs[None]
         embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
+        
         if dim % 2:
             embedding = torch.cat(
-                [embedding,
-                torch.zeros_like(embedding[:, :1])], dim=-1)
-        return embedding
+                [embedding, torch.zeros_like(embedding[:, :1])], dim=-1)
+        
+        # Convert to same dtype as t
+        return embedding.to(dtype=t.dtype)
 
     def forward(self, t):
         t_freq = self.timestep_embedding(t, self.frequency_embedding_size)
@@ -155,13 +163,23 @@ class MultimodalConditioning(nn.Module):
     def forward(self, text_timesteps, latent_timesteps):
         # Get dtype from model parameters
         model_dtype = next(self.parameters()).dtype
+        device = next(self.parameters()).device
         
-        # Convert timesteps if needed
-        if text_timesteps.dtype != model_dtype:
+        # Handle None timesteps (clean inputs in L2T/T2L modes)
+        if text_timesteps is None:
+            # For clean text (T2L mode), use zeros
+            batch_size = latent_timesteps.shape[0] if latent_timesteps is not None else 1
+            text_timesteps = torch.zeros(batch_size, device=device, dtype=model_dtype)
+        elif text_timesteps.dtype != model_dtype:
             text_timesteps = text_timesteps.to(dtype=model_dtype)
-        if latent_timesteps.dtype != model_dtype:
+        
+        if latent_timesteps is None:
+            # For clean latents (L2T mode), use zeros
+            batch_size = text_timesteps.shape[0] if text_timesteps is not None else 1
+            latent_timesteps = torch.zeros(batch_size, device=device, dtype=model_dtype)
+        elif latent_timesteps.dtype != model_dtype:
             latent_timesteps = latent_timesteps.to(dtype=model_dtype)
-
+        
         # Embed both timesteps
         text_cond = F.silu(self.text_sigma_map(text_timesteps))
         latent_cond = F.silu(self.latent_sigma_map(latent_timesteps))
@@ -170,7 +188,7 @@ class MultimodalConditioning(nn.Module):
         combined = torch.cat([text_cond, latent_cond], dim=-1)
         c = self.combine(combined)
         return c
-
+    
 class MultimodalMMDiT(nn.Module, huggingface_hub.PyTorchModelHubMixin):
     """Multimodal MMDiT for joint text-latent generation."""
     
@@ -181,12 +199,16 @@ class MultimodalMMDiT(nn.Module, huggingface_hub.PyTorchModelHubMixin):
 
         if not has_mmdit:
             raise ImportError("MMDiT package not available. Please install it.")
+        
+        self.conditional_mode = None  # None, "l2t", "t2l"
 
         self.config = config
         self.vocab_size = vocab_size
         self.latent_dim = latent_dim
         self.cluster_size = cluster_size
-        self.rounded_vocab_size = vocab_size + cluster_size + (128 - (vocab_size + cluster_size) % 128) % 128
+        # self.rounded_vocab_size = vocab_size + cluster_size + (128 - (vocab_size + cluster_size) % 128) % 128
+        
+        self.rounded_vocab_size = vocab_size
 
         # Text encoder
         self.text_encoder = TextEncoder(
@@ -255,6 +277,7 @@ class MultimodalMMDiT(nn.Module, huggingface_hub.PyTorchModelHubMixin):
     def forward(self, text_tokens, latents, text_timesteps, latent_timesteps, attention_mask=None):
         # Encode text
         text_emb = self.text_encoder(text_tokens)
+        model_dtype = next(self.parameters()).dtype
         
         # Encode latents (if provided)
         if latents is not None:

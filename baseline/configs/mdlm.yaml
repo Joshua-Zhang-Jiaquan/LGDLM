@@ -8,7 +8,7 @@ defaults:
 data:
   dataset_name: "json"
   data_files:
-    train: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/HDLM/openwebtext_processed/openwebtext.jsonl"
+    train: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/MM-LDLM/openwebtext_processed/openwebtext.jsonl"
   streaming: false
   
 model:

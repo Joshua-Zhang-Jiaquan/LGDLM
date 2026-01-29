@@ -1,0 +1,131 @@
+# File: configs/mmdit_stable.yaml
+# Stable training configuration with NaN prevention
+defaults:
+  - logging: default
+  - optimizer: adam
+  - _self_
+
+data:
+  # Preprocessed data settings
+  token_dir: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/MM-LDLM/preprocessed_data/qwen-embeddings-32/tokens/train"
+  latent_dir: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/MM-LDLM/preprocessed_data/qwen-embeddings-32/latents/train"
+
+  data_dir: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/MM-LDLM/preprocessed_data/qwen-embeddings-32"
+  data_files:
+    train: "train_data_with_tokens.json"
+    validation: "train_data_with_tokens.json"
+
+  # Data loading settings
+  load_tokens: true  # Load pre-tokenized .npz files
+  max_samples: 2000000  # Set to 2M for full dataset (lazy loading will handle this efficiently)
+  max_val_samples: 1000
+  num_workers: 16
+  initial_scan_limit: 10000  # Only scan 10K files initially, training starts immediately
+
+  # Tokenizer info
+  tokenizer_path: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/MM-LDLM/preprocessed_data/local_data/tokenizers/bert-base-uncased"
+  cache_dir: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/MM-LDLM/data/huggingface"
+  local_files_only: true
+
+  use_preprocessed: true
+  val_ratio: 0.05
+
+model:
+  # Model type
+  type: "multimodal_mmdit"
+  diffusion_process: "mdlm"
+  latent_diffusion_process: "continuous"
+
+  # Architecture parameters
+  hidden_size: 1024
+  n_blocks: 24
+  n_heads: 24
+  cond_dim: 1024
+  max_seq_len: 4096
+  dropout: 0.1
+
+  # MMDiT specific parameters
+  num_residual_streams: 2
+  qk_rmsnorm: true
+
+  # Multimodal specific
+  use_multimodal: true
+  latent_dim: 32  # Will be overridden by command line
+  latent_beta_min: 0.0001
+  latent_beta_max: 0.02
+  cluster_size: 0
+
+  # Continuous diffusion parameters
+  latent_timesteps: 1000
+  latent_beta_schedule: "cosine"
+  latent_parameterization: "epsilon"
+
+  # Text diffusion
+  p_uniform: 0.0
+  t_eps: 1e-4
+
+training:
+  seed: 42
+  train_batch_size: 4
+  eval_batch_size: 4
+  num_epochs: 10
+  num_train_steps: 1000000
+  dtype: bf16
+  compile_model: false
+
+  # Distributed training
+  world_size: 1
+
+  # Learning rate - conservative for stability
+  lr_schedule: cosine
+  warmup_steps: 2000
+
+  # Resume training
+  resume: null
+
+  # Gradient accumulation
+  gradient_accumulation_steps: 2
+
+loss:
+  loss_type: "l2t"
+  loss_scale: 1.0
+  reduction: tokenmean
+  latent_loss_weight: 0.1  # Conservative weight to prevent NaN
+  text_loss_weight: 1.0
+  use_cross_entropy: true
+  text_kl_weight: 0.0
+
+logging:
+  run_name: "mmdit-qwen-32d-l2t-stable"
+  wandb_project: "latent-dlm"
+  wandb_entity: null
+  wandb_dir: "./wandb/"
+  log_freq: 10000
+  eval_freq: 10000
+  save_freq: 50000
+  num_eval_batches: 20
+  save_dir: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/MM-LDLM/saved"
+
+optimizer:
+  name: "adamw"
+  lr: 5e-5  # Conservative learning rate
+  weight_decay: 0.01
+  beta1: 0.9
+  beta2: 0.95
+  eps: 1e-8
+  grad_clip_norm: 0.5  # Aggressive clipping for stability
+  use_fused: true
+
+tokenizer:
+  path: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/MM-LDLM/preprocessed_data/local_data/tokenizers/bert-base-uncased"
+  cache_dir: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/MM-LDLM/data/huggingface"
+  local_files_only: true
+  add_mask_token: true
+
+# Hydra settings
+hydra:
+  run:
+    dir: /inspire/hdd/global_user/zhangjiaquan-253108540222/latent/MM-LDLM/saved/${logging.run_name}
+  sweep:
+    dir: /inspire/hdd/global_user/zhangjiaquan-253108540222/latent/MM-LDLM/saved/${logging.run_name}
+    subdir: .

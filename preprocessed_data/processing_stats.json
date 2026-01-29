@@ -1,0 +1,15 @@
+{
+  "total_original_samples": 1000,
+  "total_sentence_pairs": 11850,
+  "processing_time_seconds": 138.08751273155212,
+  "processing_time_hours": 0.038357642425431146,
+  "sentences_per_second": 85.81514552323709,
+  "batch_size": 32,
+  "min_sentence_length": 20,
+  "max_sentence_length": 500,
+  "token_max_length": 512,
+  "num_workers": 60,
+  "created_at": "2026-01-10 01:28:27",
+  "source_directory": "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/MM-LDLM/preprocessed_data/local_data/datasets/openwebtext/processed",
+  "target_directory": "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/MM-LDLM/preprocessed_data"
+}

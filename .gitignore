@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.venv/
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs
+*.log
+nohup.out
+train_logs/*.log
+
+# Data
+preprocessed_data/*/
+!preprocessed_data/README
+tokenized_output/
+
+# Results
+results/*/
+!results/archive/
+saved/*/
+outputs/*/
+
+# System
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Temporary
+.~*
+
+# Training logs (large files)
+train_logs/*.txt
+train_logs/*.log

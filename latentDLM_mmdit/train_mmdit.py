@@ -1,5 +1,3 @@
-# File: latentDLM_mmdit/train_mmdit.py
-
 import datetime
 import json
 import os
@@ -23,6 +21,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 # Allow running from repo root or subdirs
 sys.path.append("..")
 sys.path.append(".")
+os.environ["WANDB_MODE"] = "disabled"
 
 # Import MMDiT components
 from latentDLM_mmdit.models.multimodal_mmdit import MultimodalMMDiT
@@ -41,6 +40,7 @@ from latentDLM_mmdit.utils import (
     calculate_flops_per_batch,
 )
 from latentDLM_mmdit.data_simple import get_simple_dataloaders
+
 from latentDLM_mmdit.diffusion_process import MaskedDiffusion
 
 
@@ -88,171 +88,10 @@ def main_process_first(local_rank: int | None = None):
         yield
 
 
-class ContinuousDiffusion:
-    """Simple continuous diffusion for latent vectors."""
-
-    def __init__(self, beta_min: float = 0.0001, beta_max: float = 0.02):
-        self.beta_min = beta_min
-        self.beta_max = beta_max
-
-    def get_alpha_beta(self, t: torch.Tensor):
-        """Get alpha and beta for continuous diffusion."""
-        beta = self.beta_min + (self.beta_max - self.beta_min) * t
-        alpha = 1 - beta
-        alpha_bar = torch.exp(torch.cumsum(torch.log(alpha), dim=0))
-        return alpha, beta, alpha_bar
-
-    def add_noise(self, x0: torch.Tensor, t: torch.Tensor, noise: torch.Tensor | None = None):
-        """Add noise to latents (continuous diffusion)."""
-        if noise is None:
-            noise = torch.randn_like(x0)
-
-        alpha_bar = self.get_alpha_beta(t)[2]
-        sqrt_alpha_bar = torch.sqrt(alpha_bar)
-        sqrt_one_minus_alpha_bar = torch.sqrt(1 - alpha_bar)
-
-        # Reshape for broadcasting
-        if sqrt_alpha_bar.dim() == 1:
-            # Accept both [B,D] and [B,1,D]
-            if x0.dim() == 2:
-                sqrt_alpha_bar = sqrt_alpha_bar.view(-1, 1)
-                sqrt_one_minus_alpha_bar = sqrt_one_minus_alpha_bar.view(-1, 1)
-            elif x0.dim() == 3:
-                sqrt_alpha_bar = sqrt_alpha_bar.view(-1, 1, 1)
-                sqrt_one_minus_alpha_bar = sqrt_one_minus_alpha_bar.view(-1, 1, 1)
-
-        xt = sqrt_alpha_bar * x0 + sqrt_one_minus_alpha_bar * noise
-        return xt, noise
-
-    def sample_timesteps(self, batch_size: int, device: torch.device):
-        """Sample timesteps for continuous diffusion."""
-        return torch.rand(batch_size, device=device)
-
-
-class MultimodalDiffusionTrainer(nn.Module):
-    """Trainer for MMDiT with both text and latent diffusion."""
-
-    def __init__(self, model, tokenizer, text_noise_schedule, latent_diffusion, dtype: torch.dtype):
-        super().__init__()
-        self.model = model
-        self.tokenizer = tokenizer
-        self.text_noise_schedule = text_noise_schedule
-        self.latent_diffusion = latent_diffusion
-        self.dtype = dtype
-
-        self.mask_token_id = tokenizer.mask_token_id
-
-    def forward(self, batch, force_transitting: bool = False):
-        # Extract data
-        input_ids = batch["input_ids"]
-        attention_mask = batch.get("attention_mask", None)
-        latents = batch.get("latent", None)
-
-        batch_size = input_ids.shape[0]
-        device = input_ids.device
-
-        # Sample timesteps for text diffusion
-        text_t = torch.rand(batch_size, device=device)
-        text_sigma = text_t.to(dtype=self.dtype)
-
-        # Apply text diffusion (masked diffusion)
-        noisy_input_ids = self.text_noise_schedule.sample_zt(input_ids, text_sigma)
-        text_target = input_ids
-        text_mask = (noisy_input_ids == self.mask_token_id)
-
-        # Handle latent diffusion
-        latent_t = None
-        noisy_latents = None
-        latent_target = None
-
-        if latents is not None:
-            latents = latents.to(device=device, dtype=self.dtype)
-
-            # Reduce possible sequence dimension -> [B, D]
-            if latents.dim() == 3:
-                if latents.shape[1] == 1:
-                    latents = latents.squeeze(1)
-                else:
-                    latents = latents.mean(dim=1)
-
-            # Sample timesteps for latent diffusion
-            latent_t = self.latent_diffusion.sample_timesteps(batch_size, device=device)
-            latent_t = latent_t.to(dtype=self.dtype)
-
-            # Add noise to latents
-            noise = torch.randn_like(latents)
-            noisy_latents, latent_noise = self.latent_diffusion.add_noise(latents, latent_t, noise)
-            latent_target = latent_noise
-
-            # Make shapes compatible with common MMDiT APIs ([B, 1, D])
-            if noisy_latents is not None and noisy_latents.dim() == 2:
-                noisy_latents = noisy_latents.unsqueeze(1)
-            if latent_target is not None and latent_target.dim() == 2:
-                latent_target = latent_target.unsqueeze(1)
-
-        # Forward pass through MMDiT
-        if latent_t is None:
-            latent_t = torch.zeros(batch_size, device=device, dtype=self.dtype)
-
-        # Convert attention_mask to boolean if needed
-        if attention_mask is not None and attention_mask.dtype != torch.bool:
-            attention_mask = attention_mask.bool()
-
-        text_logits, latent_pred = self.model(
-            text_tokens=noisy_input_ids,
-            latents=noisy_latents,
-            text_timesteps=text_sigma,
-            latent_timesteps=latent_t,
-            attention_mask=attention_mask,
-        )
-
-        vocab_size = text_logits.shape[-1]
-
-        # Text loss (denoising objective)
-        text_loss = F.cross_entropy(
-            text_logits.reshape(-1, vocab_size),
-            text_target.reshape(-1),
-            ignore_index=-100,
-        )
-
-        # Latent loss (MSE on noise prediction) - only if latents exist
-        latent_loss = torch.tensor(0.0, device=device, dtype=text_loss.dtype)
-        if latent_pred is not None and latent_target is not None:
-            # Avoid silent broadcasting: align singleton dims if present
-            if latent_pred.dim() == 3 and latent_target.dim() == 2:
-                latent_target = latent_target.unsqueeze(1)
-            if latent_pred.dim() == 2 and latent_target.dim() == 3 and latent_target.shape[1] == 1:
-                latent_target = latent_target.squeeze(1)
-            if latent_pred.shape != latent_target.shape:
-                raise ValueError(
-                    f"latent_pred/latent_target shape mismatch: {latent_pred.shape} vs {latent_target.shape}"
-                )
-            latent_loss = F.mse_loss(latent_pred, latent_target)
-
-        total_loss = text_loss + latent_loss
-
-        # Compute metrics
-        with torch.no_grad():
-            pred_tokens = torch.argmax(text_logits, dim=-1)
-            if text_mask.any():
-                text_accuracy = (pred_tokens[text_mask] == text_target[text_mask]).float().mean().item()
-            else:
-                text_accuracy = 0.0
-
-            metrics = {
-                "loss": float(total_loss.item()),
-                "text_loss": float(text_loss.item()),
-                "latent_loss": float(latent_loss.item()),
-                "text_accuracy": float(text_accuracy),
-            }
-
-            if latents is not None:
-                metrics["latent_norm"] = float(latents.norm(dim=-1).mean().item())
-                if latent_pred is not None:
-                    metrics["latent_pred_norm"] = float(latent_pred.norm(dim=-1).mean().item())
-
-        return total_loss, metrics
-
+# Import our improved continuous diffusion
+from latentDLM_mmdit.continuous_diffusion import ContinuousDiffusion
+from latentDLM_mmdit.improved_trainer import MultimodalDiffusionTrainer
+from latentDLM_mmdit.improved_trainer import MultimodalDiffusionTrainer_new
 
 def _init_distributed() -> tuple[int, int, int, bool, bool]:
     """Initialize distributed training if launched with torchrun.
@@ -324,6 +163,14 @@ def main(config):
     torch.set_float32_matmul_precision("high")
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
+    
+    # BF16-specific optimizations (if available)
+    if hasattr(torch.backends.cuda, 'matmul') and hasattr(torch.backends.cuda.matmul, 'allow_bf16_reduced_precision_reduction'):
+        torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction = True
+    if hasattr(torch.backends.cudnn, 'allow_bf16_reduced_precision_reduction'):
+        torch.backends.cudnn.allow_bf16_reduced_precision_reduction = True
+    print("BF16 optimizations enabled")
+        
     try:
         torch.backends.cuda.enable_flash_sdp(True)  # PyTorch 2.1+
     except Exception:
@@ -348,20 +195,17 @@ def main(config):
             latent_dim=config.model.get("latent_dim", 768),
             cluster_size=config.model.get("cluster_size", 0),
         ).to(device=device, dtype=dtype)
+        
+        
 
         text_noise_schedule = MaskedDiffusion(tokenizer)
 
-        latent_diffusion = ContinuousDiffusion(
-            beta_min=config.model.get("latent_beta_min", 0.0001),
-            beta_max=config.model.get("latent_beta_max", 0.02),
-        )
-
-        trainer = MultimodalDiffusionTrainer(
+        trainer = MultimodalDiffusionTrainer_new(
             model=model,
             tokenizer=tokenizer,
             text_noise_schedule=text_noise_schedule,
-            latent_diffusion=latent_diffusion,
             dtype=dtype,
+            config=config
         ).to(device=device)
 
         optimizer = get_optimizer(config, trainer)
@@ -384,7 +228,11 @@ def main(config):
 
     # ---------------- Data ----------------
     with main_process_first(local_rank):
-        train_dl, test_dl = get_simple_dataloaders(config, tokenizer)
+        if config.data.get('load_tokens', True):
+            # We don't need tokenizer for data loading when using pre-tokenized
+            train_dl, test_dl = get_simple_dataloaders(config, tokenizer=None)
+        else:
+            train_dl, test_dl = get_simple_dataloaders(config, tokenizer)
 
     max_lr = config.optimizer.lr
 
@@ -425,7 +273,7 @@ def main(config):
 
     # ---------------- DDP wrap ----------------
     if is_distributed:
-        ddp_trainer = DDP(opt_trainer, device_ids=[local_rank], output_device=local_rank)
+        ddp_trainer = DDP(opt_trainer, device_ids=[local_rank], output_device=local_rank,find_unused_parameters=True)
     else:
         ddp_trainer = opt_trainer
 
@@ -457,9 +305,12 @@ def main(config):
         train_dl.sampler.set_epoch(state.epoch)
     batch_iterator = iter(train_dl)
 
-    # Initialize eval dataloader
-    _ = next(iter(test_dl))
+    # Calculate total steps based on epochs
+    num_epochs = config.training.num_epochs
+    total_batches = len(train_dl)
+    total_steps = total_batches * num_epochs
 
+    # Skip batches if resuming
     if state.step - state.epoch_start_step > 0:
         for _ in tqdm.trange(
             state.step - state.epoch_start_step,
@@ -468,6 +319,7 @@ def main(config):
             disable=not is_main_process,
         ):
             next(batch_iterator)
+
 
     curr_time = time.time()
     trained_time = 0 if config.training.resume is None else (state.start_time - state.curr_time)
@@ -488,49 +340,72 @@ def main(config):
         loss_log_file = log_dir / "training_log.jsonl"
         loss_log_file.write_text("")
 
+
     # ---------------- Train ----------------
     with tqdm.tqdm(
-        total=config.training.num_train_steps,
+        total=total_steps,
         initial=state.step,
         desc="Training",
         ncols=100,
         disable=not is_main_process,
         leave=True,
     ) as pbar:
-        for step in range(state.step, config.training.num_train_steps):
+            
+        # ---------------- Train ----------------
+        # Train until we complete all epochs
+        while state.epoch < num_epochs:
             try:
                 batch = next(batch_iterator)
             except StopIteration:
+                # End of epoch
                 state.epoch += 1
-                state.epoch_start_step = step
+                state.epoch_start_step = state.step
+                
+                # Check if training is complete
+                if state.epoch >= num_epochs:
+                    break
+                    
+                # Reset for next epoch
                 if is_distributed and hasattr(train_dl.sampler, "set_epoch"):
                     train_dl.sampler.set_epoch(state.epoch)
                 batch_iterator = iter(train_dl)
                 batch = next(batch_iterator)
-
-            curr_lr = get_lr(config, max_lr, step)
+            
+            # Calculate learning rate
+            curr_lr = get_lr(config, max_lr, state.step)
             for param_group in optimizer.param_groups:
                 param_group["lr"] = curr_lr
 
             batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
-
-            loss, metrics = ddp_trainer(batch)
-
-            # Single-line progress update with key metrics
-            if step % 10 == 0 and is_main_process:
-                pbar.set_postfix(
-                    {
-                        "Loss": f"{loss.item():.4f}",
-                        "Text": f"{metrics.get('text_loss', 0.0):.4f}",
-                        "Latent": f"{metrics.get('latent_loss', 0.0):.4f}",
-                        "Acc": f"{metrics.get('text_accuracy', 0.0):.4f}",
-                    }
-                )
-
-            # Log all losses to file (every step)
+            
+            # Update trainer's current epoch if needed
+            if hasattr(ddp_trainer, 'module'):
+                ddp_trainer.module.current_epoch = state.epoch
+            else:
+                ddp_trainer.current_epoch = state.epoch
+                
+            # Forward pass - pass step for sequential scheduling
+            loss, metrics = ddp_trainer(batch, step=state.step)
+            
+            # Update progress bar (every 10 steps)
+            if state.step % 10 == 0 and is_main_process:
+                progress_in_epoch = (state.step - state.epoch_start_step) / total_batches
+                pbar.set_postfix({
+                    "Epoch": f"{state.epoch}/{num_epochs}",
+                    "Progress": f"{progress_in_epoch*100:.1f}%",
+                    "Loss": f"{loss.item():.4f}",
+                    "Text": f"{metrics.get('text_loss', 0.0):.4f}",
+                    "Latent": f"{metrics.get('latent_loss', 0.0):.4f}",
+                    "Acc": f"{metrics.get('text_accuracy', 0.0):.4f}",
+                })
+            
+            # Log to file (every step)
             if is_main_process and loss_log_file is not None:
+                progress_in_epoch = (state.step - state.epoch_start_step)
                 log_entry = {
-                    "step": int(step),
+                    "epoch": int(state.epoch),
+                    "step": int(state.step),
+                    "batch_in_epoch": int(progress_in_epoch),
                     "loss": float(loss.item()),
                     "lr": float(curr_lr),
                 }
@@ -542,6 +417,8 @@ def main(config):
                 with open(loss_log_file, "a") as f:
                     f.write(json.dumps(log_entry) + "\n")
 
+      
+
             (loss * config.loss.loss_scale).backward()
 
             # Grad clip
@@ -551,7 +428,7 @@ def main(config):
                 norm = torch.nn.utils.clip_grad_norm_(trainer.parameters(), 1e6)
 
             if torch.isnan(norm):
-                print(f"Warning: NaN gradient detected at step {step}")
+                print(f"Warning: NaN gradient detected at step {state.step}")
                 for param in trainer.parameters():
                     if param.grad is not None:
                         param.grad.data.zero_()
@@ -580,28 +457,28 @@ def main(config):
                 {
                     "train/loss": float(loss.item()),
                     "train/lr": float(curr_lr),
-                    "train/step": int(step + 1),
+                    "train/step": int(state.step + 1),  # CHANGED: step -> state.step
                     "train/grad_norm": float(norm.item()),
-                    "train/epoch": float(step / len(train_dl)),
+                    "train/epoch": float(state.epoch + (state.step - state.epoch_start_step) / total_batches),
                     "train/total_tokens": float(state.total_tokens),
                     "train/total_flops": float(state.total_flops),
                     "train/tokens_per_sec": float(batch_tokens / step_time),
                     "train/flops_per_sec": float(batch_flops / step_time),
                     "train/samples_per_sec": float(total_batch_size / step_time),
                     "train/it_per_sec": float(1.0 / step_time),
-                    "train/avg_it_per_sec": float((step + 1) / (curr_time - state.start_time)),
-                    **{f"train/{k}": float(v) for k, v in metrics.items()},
+                    "train/avg_it_per_sec": float((state.step + 1) / (curr_time - state.start_time))  # CHANGED: step -> state.step
                 }
             )
 
-            if ((step + 1) % config.logging.log_freq) == 0:
+            if ((state.step + 1) % config.logging.log_freq) == 0:  # CHANGED: step -> state.step
                 avg_metrics = {k: sum(d[k] for d in log_buffer) / len(log_buffer) for k in log_buffer[0]}
-                logger.log(avg_metrics, step=step)
-                logger.log({"trainer/global_step": step}, step=step)
+                logger.log(avg_metrics, step=state.step)  # CHANGED: step -> state.step
+                logger.log({"trainer/global_step": state.step}, step=state.step)  # CHANGED: step -> state.step
                 log_buffer = []
 
             # ---------------- Evaluation ----------------
-            if ((step + 1) % config.logging.eval_freq) == 0:
+                    
+            if ((state.step + 1) % config.logging.eval_freq) == 0:  # CHANGED: step -> state.step
                 with torch.no_grad():
                     eval_start_time = time.time()
                     ddp_trainer.eval()
@@ -624,8 +501,14 @@ def main(config):
                         test_batch = {k: v.to(device, non_blocking=True) for k, v in test_batch.items()}
                         e_loss, e_metrics = ddp_trainer(test_batch)
 
+                        # FIX THIS: Only accumulate numeric metrics
                         for k, v in e_metrics.items():
-                            eval_metrics[k] = eval_metrics.get(k, 0.0) + float(v) * bs
+                            try:
+                                # Try to convert to float
+                                eval_metrics[k] = eval_metrics.get(k, 0.0) + float(v) * bs
+                            except (ValueError, TypeError):
+                                # Skip non-numeric metrics
+                                pass
 
                         eval_loss += float(e_loss.item()) * bs
                         num_eval_samples += bs
@@ -635,6 +518,7 @@ def main(config):
 
                     eval_elapsed_time = time.time() - eval_start_time
 
+                    # Re-enable this logging if you want eval logging
                     if is_main_process and num_eval_samples > 0:
                         logger.log(
                             {
@@ -642,21 +526,21 @@ def main(config):
                                 "eval/time_taken": eval_elapsed_time,
                                 **{f"eval/{k}": v / num_eval_samples for k, v in eval_metrics.items()},
                             },
-                            step=step,
+                            step=state.step,  # CHANGED: step -> state.step
                         )
 
                     ddp_trainer.train()
 
             # ---------------- Save checkpoint ----------------
             state.step += 1
-            if ((step + 1) % config.logging.save_freq) == 0:
+            if ((state.step) % config.logging.save_freq) == 0:  # CHANGED: step -> state.step
                 output_path = Path(config.logging.save_dir, config.logging.run_name)
                 suffix = "latest"
-                if (step + 1) == 500000:
+                if (state.step) == 500000:
                     suffix = "-500k"
-                elif (step + 1) == 1000000:
+                elif (state.step) == 1000000:
                     suffix = "-1M"
-                elif (step + 1) == 250000:
+                elif (state.step) == 250000:
                     suffix = "-250k"
                 output_path = output_path / suffix
 

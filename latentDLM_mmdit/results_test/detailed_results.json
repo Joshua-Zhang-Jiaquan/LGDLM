@@ -1,0 +1,54 @@
+{
+  "sts": {
+    "dataset": "stsb",
+    "num_samples": 20,
+    "spearman_correlation": 0.26480725972817404,
+    "pearson_correlation": 0.27369504220172763,
+    "mean_absolute_error": 2.7197601205237207,
+    "root_mean_squared_error": 2.9979815937406897,
+    "human_scores": {
+      "min": 0.6,
+      "max": 5.0,
+      "mean": 2.8264,
+      "std": 1.304891811607384
+    },
+    "model_scores": {
+      "min": -0.23567825555801392,
+      "max": 0.5632597804069519,
+      "mean": 0.10663987947627902,
+      "std": 0.23221607720879198
+    },
+    "examples": [
+      {
+        "text1": "A girl is styling her hair.",
+        "text2": "A girl is brushing her hair.",
+        "human_score": 2.5,
+        "model_score": 0.29916757345199585
+      },
+      {
+        "text1": "A group of men play soccer on the beach.",
+        "text2": "A group of boys are playing soccer on the beach.",
+        "human_score": 3.6,
+        "model_score": 0.0277748741209507
+      },
+      {
+        "text1": "One woman is measuring another woman's ankle.",
+        "text2": "A woman measures another woman's ankle.",
+        "human_score": 5.0,
+        "model_score": 0.13204728066921234
+      },
+      {
+        "text1": "A man is cutting up a cucumber.",
+        "text2": "A man is slicing a cucumber.",
+        "human_score": 4.2,
+        "model_score": 0.21462740004062653
+      },
+      {
+        "text1": "A man is playing a harp.",
+        "text2": "A man is playing a keyboard.",
+        "human_score": 1.5,
+        "model_score": 0.42490386962890625
+      }
+    ]
+  }
+}

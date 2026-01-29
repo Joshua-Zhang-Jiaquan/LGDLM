@@ -1,0 +1,76 @@
+data:
+  dataset_name: "json"
+  latent_data_root: "preprocessed_data/e5_1024d_full"
+  data_files:
+    train: "${data.latent_data_root}/train_data.json"
+    validation: "${data.latent_data_root}/train_data.json"
+  num_workers: 4
+  tokenizer_name: null
+
+model:
+  type: "wedlm8b_latent_ar_bridge"
+
+  # Choose one:
+  # - "tencent/WeDLM-8B-Base"
+  # - "tencent/WeDLM-8B-Instruct"
+  pretrained_model_name_or_path: "tencent/WeDLM-8B-Base"
+  trust_remote_code: true
+  pretrained_model_dtype: null  # fp32|fp16|bf16|null
+
+  local_files_only: false
+  pretrained_local_dir: "./local_models/wedlm-8b"
+  download_pretrained_local_dir: true
+
+  latent_dim: 1024
+  latent_prefix_len: 8
+  latent_pooling: "last"  # last | mean
+  max_seq_len: 1024
+
+  freeze_backbone: true
+  freeze_lm_head: true
+
+training:
+  seed: 42
+  train_batch_size: 1
+  eval_batch_size: 1
+  num_train_steps: 250000
+  dtype: bf16
+  compile_model: false
+  lr_schedule: cosine
+  warmup_steps: 5000
+  resume: null
+  world_size: 1
+
+  task: "joint"  # l2t | t2l | joint
+  text_loss_weight: 1.0
+  latent_loss_weight: 1.0
+
+  freeze_unused_heads: true
+  ddp_find_unused_parameters: null
+  ddp_static_graph: null
+
+loss:
+  loss_scale: 1.0
+
+logging:
+  run_name: "wedlm-8b-ar-latent-bridge"
+  wandb_project: "mmdit"
+  wandb_entity: null
+  wandb_dir: "./outputs/"
+  log_freq: 50
+  save_freq: 2000
+  save_dir: "./outputs"
+
+optimizer:
+  name: "adamw"
+  lr: 1e-4
+  weight_decay: 0.01
+  beta1: 0.9
+  beta2: 0.95
+  eps: 1e-8
+  grad_clip_norm: 1.0
+
+# Keep relative paths stable (do not `chdir` into the hydra run dir).
+hydra:
+  job:
+    chdir: false

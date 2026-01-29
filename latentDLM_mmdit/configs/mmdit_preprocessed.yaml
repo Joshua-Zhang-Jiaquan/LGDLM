@@ -1,0 +1,145 @@
+# File: configs/mmdit_preprocessed.yaml
+defaults:
+  - logging: default
+  - optimizer: adam
+  - _self_
+
+data:
+  # Preprocessed data settings
+  token_dir: "/inspire/ssd/project/future-reading/public/jiaquan/preprocessed_data/sonar-embeddings-1024d-interact/tokens/train"
+  latent_dir: "/inspire/ssd/project/future-reading/public/jiaquan/preprocessed_data/sonar-embeddings-1024d-interact/latents/train"
+  
+  data_dir: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/MM-LDLM/preprocessed_data/t5-embeddings-1024d"
+  data_files:
+    train: "train_data_with_tokens.json"  # This should have token_path, latent_path, text_path
+    validation: "train_data_with_tokens.json"  # Optional, can be same as train
+  
+  # Data loading settings
+  load_tokens: true  # Load pre-tokenized .npz files (key setting!)
+  max_samples: null  # Limit for debugging
+  max_val_samples: 1000
+  num_workers: 8  # Reduced since data is preprocessed
+  
+  # Tokenizer info (only needed for vocab_size and fallback)
+  tokenizer_path: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/MM-LDLM/preprocessed_data/local_data/tokenizers/bert-base-uncased"
+  cache_dir: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/MM-LDLM/data/huggingface"
+  local_files_only: true
+  
+  use_preprocessed: true
+
+  val_ratio: 0.05  # 5% 用于验证
+
+
+model:
+  # Model type
+  type: "multimodal_mmdit"
+  diffusion_process: "mdlm"  # Text uses masked diffusion
+  latent_diffusion_process: "continuous"  # Latents use continuous diffusion
+  
+  # Architecture parameters
+  hidden_size: 1024
+  n_blocks: 24
+  n_heads: 24
+  cond_dim: 1024
+  max_seq_len: 4096  # Must match your preprocessing max_length
+  dropout: 0.1
+  
+  # MMDiT specific parameters
+  num_residual_streams: 2
+  qk_rmsnorm: true
+  
+  # Multimodal specific
+  use_multimodal: true
+  latent_dim: 1024  # Must match your embedding dimension (sonar/e5/qwen)
+  latent_beta_min: 0.0001
+  latent_beta_max: 0.02
+  cluster_size: 0
+  
+  # Continuous diffusion parameters for improved trainer
+  latent_timesteps: 1000
+  latent_beta_schedule: "cosine"  # "linear", "cosine", "sigmoid" 
+  latent_parameterization: "epsilon"  # "epsilon", "x0", "v_param"
+  
+  # Text diffusion
+  p_uniform: 0.0
+  t_eps: 1e-4
+
+training:
+  seed: 42
+  train_batch_size: 32  # Adjusted for your GPU setup
+  eval_batch_size: 32
+  num_epochs: 10  # Realistic number for 10K samples
+  num_train_steps: 1000000
+  dtype: bf16
+  compile_model: true
+  
+  # Distributed training
+  world_size: 8  # Set to number of GPUs you'll use
+  
+  # Learning rate
+  lr_schedule: cosine
+  warmup_steps: 1000
+  total_steps: ${training.num_epochs} * ${data.max_samples} / ${training.train_batch_size} / ${training.world_size}
+  
+  # Resume training
+  resume: null
+  
+  # Save frequency
+  save_every_n_steps: 5000
+  
+  # Sequential training schedule (optional)
+  sequential_schedule:
+    - type: "unconditional"
+      steps: 5000     # 5k steps joint training
+    - type: "l2t"
+      steps: 10000    # 10k steps latent-to-text  
+    - type: "t2l" 
+      steps: 10000    # 10k steps text-to-latent
+  
+  # Gradient accumulation (if needed)
+  gradient_accumulation_steps: 1
+
+loss:
+  loss_type: "l2t"  # Options: "unconditional", "l2t", "t2l", "sequential", "random"
+  loss_scale: 1.0
+  reduction: tokenmean
+  latent_loss_weight: 1.0
+  text_loss_weight: 1.0
+  use_cross_entropy: true  # For masked diffusion
+  text_kl_weight: 0.0
+
+logging:
+  run_name: "mmdit-sonar-l2t-1024d"  # Descriptive name
+  wandb_project: "latent-dlm"
+  wandb_entity: null
+  wandb_dir: "./wandb/"
+  log_freq: 100
+  eval_freq: 500
+  save_freq: 1000
+  num_eval_batches: 20
+  save_dir: "/inspire/ssd/project/future-reading/public/jiaquan/output_dir/l2t_models"
+
+optimizer:
+  name: "adamw"
+  lr: 1e-4
+  weight_decay: 0.01
+  beta1: 0.9
+  beta2: 0.95
+  eps: 1e-8
+  grad_clip_norm: 1.0
+  use_fused: true  # Use fused AdamW if available
+
+tokenizer:
+  # This is now separate from data loading
+  path: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/MM-LDLM/preprocessed_data/local_data/tokenizers/bert-base-uncased"
+  cache_dir: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/MM-LDLM/data/huggingface"
+  local_files_only: true
+  add_mask_token: true  # Important for masked diffusion
+
+# Hydra settings
+hydra:
+  run:
+    dir: /inspire/ssd/project/future-reading/public/jiaquan/output_dir/${logging.run_name}
+  sweep:
+    dir: /inspire/ssd/project/future-reading/public/jiaquan/output_dir/${logging.run_name}  # Same as run.dir
+    subdir: .

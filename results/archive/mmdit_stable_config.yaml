@@ -1,0 +1,130 @@
+# Recommended Training Configuration to Prevent NaN Gradients
+# File: configs/mmdit_stable.yaml
+# Copy this to latentDLM_mmdit/configs/mmdit_stable.yaml
+
+defaults:
+  - logging: default
+  - optimizer: adam
+  - _self_
+
+data:
+  # Preprocessed data settings
+  token_dir: "/inspire/ssd/project/future-reading/public/jiaquan/preprocessed_data/qwen-embeddings-32/tokens/train"
+  latent_dir: "/inspire/ssd/project/future-reading/public/jiaquan/preprocessed_data/qwen-embeddings-32/latents/train"
+
+  # Data loading settings
+  load_tokens: true
+  max_samples: null
+  max_val_samples: 1000
+  num_workers: 16
+
+  # Tokenizer info
+  tokenizer_path: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/MM-LDLM/preprocessed_data/local_data/tokenizers/bert-base-uncased"
+  cache_dir: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/MM-LDLM/data/huggingface"
+  local_files_only: true
+
+  use_preprocessed: true
+  val_ratio: 0.05
+
+model:
+  # Model type
+  type: "multimodal_mmdit"
+  diffusion_process: "mdlm"
+  latent_diffusion_process: "continuous"
+
+  # Architecture parameters
+  hidden_size: 1024
+  n_blocks: 24
+  n_heads: 24
+  cond_dim: 1024
+  max_seq_len: 4096
+  dropout: 0.1
+
+  # MMDiT specific
+  num_residual_streams: 2
+  qk_rmsnorm: true
+
+  # Multimodal specific
+  use_multimodal: true
+  latent_dim: 32  # Match your embedding dimension
+  latent_beta_min: 0.0001
+  latent_beta_max: 0.02
+  cluster_size: 0
+
+  # Continuous diffusion parameters
+  latent_timesteps: 1000
+  latent_beta_schedule: "cosine"
+  latent_parameterization: "epsilon"
+
+  # Text diffusion
+  p_uniform: 0.0
+  t_eps: 1e-4
+
+training:
+  seed: 42
+  train_batch_size: 4
+  eval_batch_size: 4
+  num_epochs: 10
+  num_train_steps: 500000
+  dtype: bf16
+  compile_model: false
+
+  # Distributed training
+  world_size: 16
+
+  # Learning rate - REDUCED for stability
+  lr_schedule: cosine
+  warmup_steps: 2000  # INCREASED warmup
+
+  # Resume training
+  resume: null
+
+  # Save frequency
+  save_every_n_steps: 5000
+
+  # Gradient accumulation - ADDED for stability
+  gradient_accumulation_steps: 2
+
+loss:
+  loss_type: "l2t"  # Options: "unconditional", "l2t", "t2l"
+  loss_scale: 1.0
+  reduction: tokenmean
+  latent_loss_weight: 0.1  # REDUCED from 1.0 to prevent latent loss dominance
+  text_loss_weight: 1.0
+  use_cross_entropy: true
+  text_kl_weight: 0.0
+
+logging:
+  run_name: "mmdit-qwen-32d-l2t-stable"
+  wandb_project: "latent-dlm"
+  wandb_entity: null
+  wandb_dir: "./wandb/"
+  log_freq: 1000  # Log more frequently to catch issues early
+  eval_freq: 2000
+  save_freq: 5000  # Save more frequently
+  num_eval_batches: 20
+  save_dir: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/MM-LDLM/saved"
+
+optimizer:
+  name: "adamw"
+  lr: 5e-5  # REDUCED from 1e-4 for stability
+  weight_decay: 0.01
+  beta1: 0.9
+  beta2: 0.95  # Slightly lower beta2 for more responsive gradient estimates
+  eps: 1e-8
+  grad_clip_norm: 0.5  # REDUCED from 1.0 for better gradient control
+  use_fused: true
+
+tokenizer:
+  path: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/MM-LDLM/preprocessed_data/local_data/tokenizers/bert-base-uncased"
+  cache_dir: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/MM-LDLM/data/huggingface"
+  local_files_only: true
+  add_mask_token: true
+
+# Hydra settings
+hydra:
+  run:
+    dir: /inspire/ssd/project/future-reading/public/jiaquan/output_dir/${logging.run_name}
+  sweep:
+    dir: /inspire/ssd/project/future-reading/public/jiaquan/output_dir/${logging.run_name}
+    subdir: .

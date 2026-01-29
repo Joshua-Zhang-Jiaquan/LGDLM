@@ -8,9 +8,25 @@ This repo now contains (high-level):
 - `latentDLM_mmdit/` — latent MMDiT (text-to-latent / latent reasoning) training and utilities (train_mmdit.py, trainer_multimodal.py, etc.).
 - `latentIMG_mmdit/` — image+text MMDiT training scripts and image patch encoders (continuous & discrete training variants).
 - `preprocessed_data/` — data preprocessing helpers and distributed latent extraction: `prepare_data_multi_gpu.py` and usage examples in its README.
-- `baseline_latent/` — additional latent-focused baseline code (train_latent_dit.py, trainer_latent.py, etc.).
+- `scripts/` — training scripts (`scripts/training/`) and utility scripts (`scripts/utils/`).
+- `docs/` — comprehensive documentation including training guides, troubleshooting, and optimization references.
+- `results/` — output directories for experiments and archived configuration files.
 
 Note: This top-level README intentionally focuses on the latent/text/image workflows. If you need to run the original HDLM unconditional generation or NeurIPS experiment reproductions, see the `baseline/` and `baseline_latent/` folders — those baselines are retained.
+
+## Quick Start
+
+For stable training with NaN gradient protection:
+
+```bash
+# Test on single node with 2 GPUs (recommended first step)
+NNODES=1 NPROC_PER_NODE=2 bash scripts/training/train_qwen_english_l2t_stable.sh
+
+# Scale to multiple nodes once stable
+NNODES=2 bash scripts/training/train_qwen_english_l2t_stable.sh  # 16 GPUs
+```
+
+See `docs/STABLE_TRAINING_GUIDE.md` for comprehensive training documentation.
 
 
 
@@ -36,7 +52,7 @@ Example preprocessing (from `preprocessed_data/README`):
 
 ```bash
 # SONAR on 2 GPUs
-torchrun --nnodes=1 --nproc_per_node=1 preprocessed_data/prepare_data_multi_gpu.py \
+torchrun --nnodes=1 --nproc_per_node=2 preprocessed_data/prepare_data_multi_gpu.py \
   --datasets openwebtext \
   --latent-model sonar \
   --batch-size 128 \
@@ -138,15 +154,15 @@ torchrun --nnodes 1 --nproc_per_node 1 baseline_latent/train_cross_dit.py \
 
 ```bash
 # MMDiT training run (use bf16 for faster/memory-efficient runs on supported hardware)
-torchrun --nnodes 1 --nproc_per_node 1 latentDLM_mmdit/train_mmdit.py \
+torchrun --nnodes 1 --nproc_per_node 2 latentDLM_mmdit/train_mmdit.py \
   --config-name mmdit \
   logging.run_name="mmdit-training-h200" \
-  training.train_batch_size=80 \
-  training.eval_batch_size=80 \
+  training.train_batch_size=16 \
+  training.eval_batch_size=16 \
   training.num_train_steps=25000 \
   training.compile_model=false \
-  model.latent_dim=768 \
-  training.dtype=fp32
+  model.latent_dim=1024 \
+  training.dtype=bf16
 ```
 
 

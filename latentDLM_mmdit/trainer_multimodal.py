@@ -6,27 +6,8 @@ import torch.nn.functional as F
 from .diffusion_process import MaskedDiffusion
 
 
-class ContinuousDiffusion:
-    """Simple continuous diffusion for latent vectors."""
-    
-    def __init__(self, beta_min=0.0001, beta_max=0.02):
-        self.beta_min = beta_min
-        self.beta_max = beta_max
-        
-    def sample_timesteps(self, batch_size, device):
-        return torch.rand(batch_size, device=device)
-    
-    def add_noise(self, x0, t, noise=None):
-        if noise is None:
-            noise = torch.randn_like(x0)
-        
-        # Simple linear schedule
-        alpha_bar = 1 - t.view(-1, 1, 1)
-        sqrt_alpha_bar = torch.sqrt(alpha_bar)
-        sqrt_one_minus_alpha_bar = torch.sqrt(1 - alpha_bar)
-        
-        xt = sqrt_alpha_bar * x0 + sqrt_one_minus_alpha_bar * noise
-        return xt, noise
+# Use the improved continuous diffusion
+from .continuous_diffusion import ContinuousDiffusion
 
 
 class MultimodalTrainer(nn.Module):

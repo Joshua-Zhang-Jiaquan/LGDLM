@@ -7,9 +7,9 @@ defaults:
 data:
   dataset_name: "json"
   data_files:
-    train: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/HDLM/mmdit/data_root/train_data.json"
-    validation: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/HDLM/mmdit/data_root/train_data.json"
-  latent_data_root: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/HDLM/mmdit/data_root"
+    train: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/MM-LDLM/preprocessed_data/data_root/train_data.json"
+    validation: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/MM-LDLM/preprocessed_data/data_root/train_data.json"
+  latent_data_root: "/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/MM-LDLM/preprocessed_data/data_root"
   streaming: false
   pre_tokenize: true
   max_length: 512
