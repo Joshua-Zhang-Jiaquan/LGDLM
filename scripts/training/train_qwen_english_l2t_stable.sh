@@ -71,8 +71,27 @@ if [ -z "${NPROC_PER_NODE}" ] || [ "${NPROC_PER_NODE}" -le 0 ]; then
   exit 1
 fi
 
+# Detect GPU memory for adaptive batch sizing
+GPU_MEMORY_GB=0
+if command -v nvidia-smi >/dev/null 2>&1; then
+  GPU_MEMORY_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1 | tr -d ' ')
+  GPU_MEMORY_GB=$((GPU_MEMORY_MB / 1024))
+  echo "✓ Detected GPU memory: ${GPU_MEMORY_GB}GB"
+fi
+
 GLOBAL_WORLD_SIZE=$((NNODES * NPROC_PER_NODE))
 BASE_WORLD_SIZE="${BASE_WORLD_SIZE:-${NPROC_PER_NODE}}"
+
+echo ""
+echo "=========================================="
+echo "Adaptive Scaling Configuration"
+echo "=========================================="
+echo "Nodes: ${NNODES}"
+echo "GPUs per node: ${NPROC_PER_NODE}"
+echo "Total GPUs: ${GLOBAL_WORLD_SIZE}"
+echo "GPU Memory: ${GPU_MEMORY_GB}GB"
+echo "=========================================="
+echo ""
 
 if [ "${GLOBAL_WORLD_SIZE}" -le 0 ]; then
   echo "ERROR: GLOBAL_WORLD_SIZE must be > 0"
@@ -103,10 +122,75 @@ L2T_LOG_FREQ=$(scale_value "${L2T_BASE_LOG_FREQ}")
 L2T_EVAL_FREQ=$(scale_value "${L2T_BASE_EVAL_FREQ}")
 
 # ============================================================
-# TRAINING CONFIGURATION (NaN-safe defaults)
+# TRAINING CONFIGURATION (Adaptive defaults)
 # ============================================================
-L2T_TRAIN_BS="${L2T_TRAIN_BS:-4}"
-L2T_EVAL_BS="${L2T_EVAL_BS:-4}"
+
+# Adaptive batch size based on GPU memory
+if [ -z "${L2T_TRAIN_BS:-}" ]; then
+  if [ "${GPU_MEMORY_GB}" -ge 80 ]; then
+    L2T_TRAIN_BS=8  # H100/A100 80GB
+  elif [ "${GPU_MEMORY_GB}" -ge 40 ]; then
+    L2T_TRAIN_BS=6  # A100 40GB
+  elif [ "${GPU_MEMORY_GB}" -ge 24 ]; then
+    L2T_TRAIN_BS=4  # RTX 4090/3090
+  elif [ "${GPU_MEMORY_GB}" -ge 16 ]; then
+    L2T_TRAIN_BS=3  # RTX 4080
+  else
+    L2T_TRAIN_BS=2  # Smaller GPUs
+  fi
+  echo "✓ Adaptive batch size: ${L2T_TRAIN_BS} (based on ${GPU_MEMORY_GB}GB GPU)"
+else
+  echo "✓ Using manual batch size: ${L2T_TRAIN_BS}"
+fi
+
+L2T_EVAL_BS="${L2T_EVAL_BS:-${L2T_TRAIN_BS}}"
+
+# Adaptive gradient accumulation for effective batch size
+if [ -z "${GRAD_ACCUM_STEPS:-}" ]; then
+  # Target effective batch size of 32-64 across all GPUs
+  EFFECTIVE_BS=$((L2T_TRAIN_BS * GLOBAL_WORLD_SIZE))
+  if [ "${EFFECTIVE_BS}" -lt 32 ]; then
+    GRAD_ACCUM_STEPS=$(( (32 + EFFECTIVE_BS - 1) / EFFECTIVE_BS ))
+  else
+    GRAD_ACCUM_STEPS=1
+  fi
+  echo "✓ Adaptive gradient accumulation: ${GRAD_ACCUM_STEPS} steps (effective BS: $((EFFECTIVE_BS * GRAD_ACCUM_STEPS)))"
+else
+  echo "✓ Using manual gradient accumulation: ${GRAD_ACCUM_STEPS}"
+fi
+
+# Adaptive learning rate scaling (linear scaling rule)
+if [ -z "${LEARNING_RATE:-}" ]; then
+  BASE_LR="5e-5"
+  TOTAL_EFFECTIVE_BS=$((L2T_TRAIN_BS * GLOBAL_WORLD_SIZE * GRAD_ACCUM_STEPS))
+
+  # Scale LR proportionally to batch size (with sqrt scaling for stability)
+  if [ "${TOTAL_EFFECTIVE_BS}" -gt 32 ]; then
+    # Use sqrt scaling for large batch sizes (more stable)
+    SCALE_FACTOR=$(echo "scale=6; sqrt(${TOTAL_EFFECTIVE_BS} / 32)" | bc)
+    LEARNING_RATE=$(echo "scale=10; ${BASE_LR} * ${SCALE_FACTOR}" | bc)
+  else
+    LEARNING_RATE="${BASE_LR}"
+  fi
+  echo "✓ Adaptive learning rate: ${LEARNING_RATE} (total effective BS: ${TOTAL_EFFECTIVE_BS})"
+else
+  echo "✓ Using manual learning rate: ${LEARNING_RATE}"
+fi
+
+# Adaptive warmup steps based on total steps
+if [ -z "${WARMUP_STEPS:-}" ]; then
+  # 2% of total steps for warmup
+  WARMUP_STEPS=$(( L2T_STEPS / 50 ))
+  if [ "${WARMUP_STEPS}" -lt 1000 ]; then
+    WARMUP_STEPS=1000
+  elif [ "${WARMUP_STEPS}" -gt 5000 ]; then
+    WARMUP_STEPS=5000
+  fi
+  echo "✓ Adaptive warmup steps: ${WARMUP_STEPS}"
+else
+  echo "✓ Using manual warmup steps: ${WARMUP_STEPS}"
+fi
+
 L2T_CONFIG="${L2T_CONFIG:-mmdit_stable}"  # Use stable config by default
 L2T_RUN_NAME="${L2T_RUN_NAME:-mmdit-qwen-32d-l2t-stable}"
 L2T_SAVE_DIR="${L2T_SAVE_DIR:-/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/MM-LDLM/saved}"
@@ -118,11 +202,8 @@ TOKEN_DIR="${TOKEN_DIR:-/inspire/hdd/global_user/zhangjiaquan-253108540222/laten
 LATENT_DIR="${LATENT_DIR:-/inspire/hdd/global_user/zhangjiaquan-253108540222/latent/MM-LDLM/preprocessed_data/qwen-embeddings-32/latents/train}"
 
 # NaN-safe hyperparameters (can be overridden)
-LEARNING_RATE="${LEARNING_RATE:-5e-5}"  # Reduced from 1e-4
 GRAD_CLIP_NORM="${GRAD_CLIP_NORM:-0.5}"  # Reduced from 1.0
-WARMUP_STEPS="${WARMUP_STEPS:-2000}"  # Increased from 1000
 LATENT_LOSS_WEIGHT="${LATENT_LOSS_WEIGHT:-0.1}"  # Reduced from 1.0
-GRAD_ACCUM_STEPS="${GRAD_ACCUM_STEPS:-2}"  # Added for stability
 
 # ============================================================
 # ENVIRONMENT SETUP
@@ -155,15 +236,30 @@ export TORCH_NCCL_BLOCKING_WAIT=1
 # ============================================================
 # DISPLAY CONFIGURATION
 # ============================================================
+echo ""
 echo "=========================================="
-echo "Training Configuration"
+echo "Adaptive Training Configuration"
 echo "=========================================="
-echo "Distributed Setup:"
-echo "  Node Rank: ${NODE_RANK}"
-echo "  NNODES: ${NNODES}"
-echo "  NPROC_PER_NODE: ${NPROC_PER_NODE}"
-echo "  GLOBAL_WORLD_SIZE: ${GLOBAL_WORLD_SIZE}"
-echo "  BASE_WORLD_SIZE: ${BASE_WORLD_SIZE}"
+echo "Hardware:"
+echo "  Node Rank: ${NODE_RANK}/${NNODES}"
+echo "  GPUs per node: ${NPROC_PER_NODE}"
+echo "  Total GPUs: ${GLOBAL_WORLD_SIZE}"
+echo "  GPU Memory: ${GPU_MEMORY_GB}GB"
+echo ""
+echo "Adaptive Scaling:"
+echo "  Batch size per GPU: ${L2T_TRAIN_BS}"
+echo "  Gradient accumulation: ${GRAD_ACCUM_STEPS}"
+echo "  Effective batch size: $((L2T_TRAIN_BS * GLOBAL_WORLD_SIZE * GRAD_ACCUM_STEPS))"
+echo "  Learning rate: ${LEARNING_RATE}"
+echo "  Warmup steps: ${WARMUP_STEPS}"
+echo ""
+echo "Training Schedule:"
+echo "  Total steps: ${L2T_STEPS}"
+echo "  Save frequency: ${L2T_SAVE_FREQ}"
+echo "  Log frequency: ${L2T_LOG_FREQ}"
+echo "  Eval frequency: ${L2T_EVAL_FREQ}"
+echo ""
+echo "Network:"
 echo "  Master Addr: ${MASTER_ADDR}"
 echo "  Master Port: ${MASTER_PORT}"
 echo ""
