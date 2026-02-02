@@ -1,0 +1,105 @@
+# Cluster-oriented config for cycle_vae_impl.
+#
+# Goals:
+# - Match the shape/keys of latentDLM_mmdit stable configs so it's easy to override.
+# - Require the real model dependency (mmdit) on the training machine.
+# - Keep all artifacts under cycle_vae_impl/outputs.
+#
+# IMPORTANT:
+# - Fill in real paths (tokenizer + data dirs) via editing this file or CLI overrides.
+
+data:
+  token_dir: ""
+  latent_dir: ""
+  data_dir: ""
+  data_files:
+    train: ""
+    validation: ""
+  load_tokens: true
+  use_preprocessed: true
+  max_samples: 2000000
+  max_val_samples: 1000
+  num_workers: 8
+  initial_scan_limit: 10000
+
+model:
+  type: "multimodal_mmdit"
+  diffusion_process: "mdlm"
+  latent_diffusion_process: "continuous"
+
+  hidden_size: 1024
+  n_blocks: 24
+  n_heads: 24
+  cond_dim: 1024
+  max_seq_len: 4096
+  dropout: 0.1
+
+  num_residual_streams: 2
+  qk_rmsnorm: true
+
+  use_multimodal: true
+  latent_dim: 32
+  latent_beta_min: 0.0001
+  latent_beta_max: 0.02
+  cluster_size: 0
+
+  latent_timesteps: 1000
+  latent_beta_schedule: "cosine"
+  latent_parameterization: "epsilon"
+
+  # Disallow stub on the training machine.
+  use_stub_if_no_mmdit: false
+
+training:
+  seed: 42
+  dtype: bf16
+  train_batch_size: 4
+  eval_batch_size: 4
+  num_train_steps: 100000
+  gradient_accumulation_steps: 1
+  lr_schedule: cosine
+  warmup_steps: 2000
+
+loss:
+  loss_type: "cycle_vae"
+  latent_loss_weight: 0.1
+
+  # Match existing pretrained T2L behavior by default.
+  latent_t_mode: "full"  # random|full
+
+  cycle_text_weight: 1.0
+  cycle_text_warmup_steps: 0
+  cycle_text_ramp_steps: 0
+
+  cycle_latent_weight: 1.0
+  cycle_latent_warmup_steps: 0
+  cycle_latent_ramp_steps: 0
+
+  cycle_latent_sampling: "argmax"  # argmax|categorical
+
+  cycle_latent_t_min: 0.0
+  cycle_latent_t_max: 0.98
+  cycle_stop_grad_latent: true
+
+logging:
+  run_name: "cycle-vae-cluster"
+  log_dir: "cycle_vae_impl/outputs"
+  log_every: 100
+  save_every: 1000
+
+optimizer:
+  name: "adamw"
+  lr: 5e-5
+  weight_decay: 0.01
+  beta1: 0.9
+  beta2: 0.95
+  eps: 1e-8
+  grad_clip_norm: 0.5
+
+tokenizer:
+  path: ""
+  local_files_only: true
+  # DummyTokenizer fallback is not used if path is set.
+  vocab_size: 8192
+  mask_token_id: 103
+  pad_token_id: 0

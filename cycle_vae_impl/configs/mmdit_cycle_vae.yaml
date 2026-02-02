@@ -1,0 +1,81 @@
+# Standalone (OmegaConf) config for isolated cycle_vae experiments.
+# Do NOT use Hydra here; load with cycle_vae_impl/utils/config.py.
+
+data:
+  # Override these paths for real training.
+  token_dir: ""
+  latent_dir: ""
+  data_dir: ""
+  data_files:
+    train: ""
+    validation: ""
+  load_tokens: true
+  use_preprocessed: true
+  max_samples: 1024
+  max_val_samples: 64
+  num_workers: 2
+  initial_scan_limit: 100
+
+model:
+  type: "multimodal_mmdit"
+  hidden_size: 256
+  n_blocks: 2
+  n_heads: 4
+  cond_dim: 256
+  max_seq_len: 128
+  dropout: 0.0
+  num_residual_streams: 2
+  qk_rmsnorm: true
+  use_multimodal: true
+  latent_dim: 32
+  cluster_size: 0
+  use_stub_if_no_mmdit: true
+  latent_timesteps: 1000
+  latent_beta_schedule: "cosine"
+  latent_parameterization: "epsilon"
+
+training:
+  seed: 42
+  dtype: fp32
+  train_batch_size: 2
+  eval_batch_size: 2
+  num_train_steps: 10
+  gradient_accumulation_steps: 1
+
+loss:
+  loss_type: "cycle_vae"
+  latent_loss_weight: 0.1
+  latent_t_mode: "random"  # random|full
+  cycle_text_weight: 1.0
+  cycle_text_warmup_steps: 0
+  cycle_text_ramp_steps: 0
+  cycle_latent_weight: 0.0
+  cycle_latent_warmup_steps: 0
+  cycle_latent_ramp_steps: 0
+  cycle_latent_sampling: "argmax"
+  cycle_latent_t_min: 0.0
+  cycle_latent_t_max: 0.98
+  cycle_stop_grad_latent: true
+
+logging:
+  run_name: "cycle-vae-smoke"
+  log_dir: "cycle_vae_impl/outputs"
+  log_every: 1
+  save_every: 0
+
+optimizer:
+  name: "adamw"
+  lr: 1e-4
+  weight_decay: 0.01
+  beta1: 0.9
+  beta2: 0.95
+  eps: 1e-8
+  grad_clip_norm: 1.0
+
+tokenizer:
+  # If path is empty, entrypoints will use DummyTokenizer.
+  path: ""
+  local_files_only: true
+  vocab_size: 8192
+  mask_token_id: 103
+  pad_token_id: 0
