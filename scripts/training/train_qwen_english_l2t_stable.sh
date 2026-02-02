@@ -128,15 +128,15 @@ L2T_EVAL_FREQ=$(scale_value "${L2T_BASE_EVAL_FREQ}")
 # Adaptive batch size based on GPU memory
 if [ -z "${L2T_TRAIN_BS:-}" ]; then
   if [ "${GPU_MEMORY_GB}" -ge 80 ]; then
-    L2T_TRAIN_BS=8  # H100/A100 80GB
+    L2T_TRAIN_BS=4  # H100/A100 80GB (reduced from 8 to avoid OOM with seq_len=2048)
   elif [ "${GPU_MEMORY_GB}" -ge 40 ]; then
-    L2T_TRAIN_BS=6  # A100 40GB
+    L2T_TRAIN_BS=3  # A100 40GB (reduced from 6)
   elif [ "${GPU_MEMORY_GB}" -ge 24 ]; then
-    L2T_TRAIN_BS=4  # RTX 4090/3090
+    L2T_TRAIN_BS=2  # RTX 4090/3090 (reduced from 4)
   elif [ "${GPU_MEMORY_GB}" -ge 16 ]; then
-    L2T_TRAIN_BS=3  # RTX 4080
+    L2T_TRAIN_BS=2  # RTX 4080 (reduced from 3)
   else
-    L2T_TRAIN_BS=2  # Smaller GPUs
+    L2T_TRAIN_BS=1  # Smaller GPUs (reduced from 2)
   fi
   echo "✓ Adaptive batch size: ${L2T_TRAIN_BS} (based on ${GPU_MEMORY_GB}GB GPU)"
 else

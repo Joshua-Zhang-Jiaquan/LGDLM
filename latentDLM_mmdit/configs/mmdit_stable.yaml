@@ -41,7 +41,7 @@ model:
   n_blocks: 24
   n_heads: 24
   cond_dim: 1024
-  max_seq_len: 4096
+  max_seq_len: 2048  # Reduced from 4096 to avoid OOM (attention memory scales O(N²))
   dropout: 0.1
 
   # MMDiT specific parameters
