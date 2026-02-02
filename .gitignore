@@ -39,3 +39,9 @@ outputs/*/
 # Training logs (large files)
 train_logs/*.txt
 train_logs/*.log
+
+# Checkpoint files (large model weights)
+*.pt
+*.pth
+*.ckpt
+cycle_vae_impl/outputs/
